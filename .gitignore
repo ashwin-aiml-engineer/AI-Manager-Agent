@@ -2,6 +2,7 @@
 .venv/
 venv/
 env/
+.conda/
 
 # Ignore Python Cache
 __pycache__/
@@ -9,10 +10,21 @@ __pycache__/
 
 # Ignore VS Code settings
 .vscode/
+.idea/
 
 # Ignore Local Models (The big files)
 models/
 *.gguf
+*.bin
 
 # Ignore OS files
 .DS_Store
+Thumbs.db
+
+# Security
+.env
+secrets.toml
+
+# Project specifics
+vector_db/
+chroma_db/
