@@ -1,10 +1,10 @@
 streamlit
 pandas
-pandasai
 matplotlib
 seaborn
-langchain
-langchain-community
-chromadb
-ollama
-pypdf
+litellm
+langchain==0.0.330
+chromadb==0.4.15
+posthog<3.0.0
+pysqlite3-binary
+onnxruntime

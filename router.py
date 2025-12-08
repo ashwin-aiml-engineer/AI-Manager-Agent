@@ -1,4 +1,5 @@
 import sys
+import os
 from litellm import completion
 
 # --- CONFIGURATION ---
@@ -27,6 +28,10 @@ def route_query(user_query):
     - Do NOT output markdown or punctuation.
     """
 
+    # 🛠️ CRITICAL FIX FOR DOCKER:
+    # Get the URL from the environment (passed via docker run -e), or default to localhost if testing locally.
+    ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+
     try:
         # 2. CALL THE LOCAL MODEL
         response = completion(
@@ -35,7 +40,9 @@ def route_query(user_query):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_query}
             ],
-            api_base="http://localhost:11434"
+            api_base=ollama_url,
+            # 🛑 FORCE CPU ONLY (Prevents CUDA Crash on 1050 Ti)
+            options={"num_gpu": 0} 
         )
         
         # 3. CLEAN THE OUTPUT

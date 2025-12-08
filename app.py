@@ -1,5 +1,14 @@
+# --- DOCKER DATABASE FIX (Must be at the very top) ---
+import pysqlite3
+import sys
+sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+# -----------------------------------------------------
+
 import os
-os.environ["OLLAMA_NUM_GPU"] = "0"
+# DISABLE CHROMA TELEMETRY (Prevents crash)
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["OLLAMA_NUM_GPU"] = "0" 
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -9,12 +18,10 @@ from contextlib import redirect_stdout
 from litellm import completion
 
 # --- 🛠️ CRITICAL FIX: Use Old Stable Imports ---
-# We are using langchain 0.0.330, so we must import directly, NOT from 'community'
 try:
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OllamaEmbeddings
 except ImportError:
-    # Fallback just in case
     from langchain_community.vectorstores import Chroma
     from langchain_community.embeddings import OllamaEmbeddings
 
@@ -30,14 +37,16 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # 3. Safe Brain Loading (Lazy Load)
-# We removed the global load. We only load when asked.
 def get_legal_db():
+    # Check if the folder exists (Volume Mounted)
     if not os.path.exists("vector_db"):
         st.error("❌ Error: 'vector_db' folder not found.")
         return None
     
     try:
-        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+        # Get URL from environment
+        ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+        embeddings = OllamaEmbeddings(model="nomic-embed-text", base_url=ollama_url)
         db = Chroma(persist_directory="vector_db", embedding_function=embeddings)
         return db
     except Exception as e:
@@ -46,26 +55,26 @@ def get_legal_db():
 
 # 4. Helper: Legal Agent
 def ask_legal_agent(query):
-    # Load DB only when needed (Prevents startup crash)
     legal_db = get_legal_db()
     if not legal_db:
         return "⚠️ Legal System Offline. Check terminal."
     
-    # Retrieval
     try:
         results = legal_db.similarity_search(query, k=3)
         context = "\n".join([doc.page_content for doc in results])
         
-        # Generation
         prompt = f"""
         You are a Corporate Lawyer. Answer based ONLY on this context:
         {context}
         User Question: {query}
         """
+        ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+        
         response = completion(
             model="ollama/llama3.1", 
             messages=[{"role": "user", "content": prompt}],
-            api_base="http://localhost:11434"
+            api_base=ollama_url,
+            options={"num_gpu": 0}
         )
         return response['choices'][0]['message']['content']
     except Exception as e:
@@ -82,11 +91,14 @@ def ask_data_agent(query, df):
     - If calculating, print the answer.
     - OUTPUT ONLY CODE.
     """
+    ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+
     try:
         response = completion(
             model="ollama/qwen2.5-coder:32b", 
             messages=[{"role": "user", "content": prompt}],
-            api_base="http://localhost:11434"
+            api_base=ollama_url,
+            options={"num_gpu": 0} 
         )
         
         code = response['choices'][0]['message']['content'].replace("```python", "").replace("```", "").strip()
@@ -97,7 +109,6 @@ def ask_data_agent(query, df):
         if os.path.exists(chart_file): os.remove(chart_file)
         
         with redirect_stdout(output_buffer):
-            # Added sns to exec environment
             exec(code, {"df": df, "pd": pd, "plt": plt, "sns": sns})
                 
         result_text = output_buffer.getvalue()
@@ -126,16 +137,14 @@ for msg in st.session_state.messages:
         else:
             st.write(msg["content"])
 
+# Input Handling
 if prompt := st.chat_input("How can I help you?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.write(prompt)
 
     with st.spinner("🤖 Routing request..."):
-        # 1. Router
         department = route_query(prompt)
-        
-        # 2. Agent Handoff
         response_content = ""
         
         if department == "legal":
@@ -151,9 +160,19 @@ if prompt := st.chat_input("How can I help you?"):
                 
         else:
             # General Chat
-            response = completion(model="ollama/llama3.1", messages=[{"role": "user", "content": prompt}])
-            response_content = response['choices'][0]['message']['content']
+            ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+            try:
+                response = completion(
+                    model="ollama/llama3.1", 
+                    messages=[{"role": "user", "content": prompt}],
+                    api_base=ollama_url,
+                    options={"num_gpu": 0}
+                )
+                response_content = response['choices'][0]['message']['content']
+            except Exception as e:
+                response_content = f"❌ General Chat Error: {e}"
 
+    # Display Response (This was missing before!)
     st.session_state.messages.append({"role": "assistant", "content": response_content})
     with st.chat_message("assistant"):
         if isinstance(response_content, dict) and response_content.get("type") == "image":
