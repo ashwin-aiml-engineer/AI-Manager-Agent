@@ -1,17 +1,36 @@
-# --- DOCKER DATABASE FIX (Conditional) ---
+import os
+import sys
+
+# ==============================================================================
+# 🛠️ CRITICAL WINDOWS DLL FIXES (MUST BE FIRST)
+# ==============================================================================
+
+# 1. Force Windows to look in the Conda "Library/bin" folder for missing DLLs
+try:
+    if sys.platform == "win32":
+        conda_bin_path = os.path.join(sys.prefix, 'Library', 'bin')
+        if os.path.exists(conda_bin_path):
+            os.add_dll_directory(conda_bin_path)
+except Exception as e:
+    print(f"⚠️ Warning: Could not add DLL directory: {e}")
+
+# 2. Allow duplicate OpenMP libraries
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# 3. Docker/Windows Database Fix
 try:
     __import__('pysqlite3')
-    import sys
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 except ImportError:
     pass
-# -----------------------------------------------------
 
-import os
-# DISABLE CHROMA TELEMETRY
+# --- SYSTEM CONFIG ---
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
-os.environ["OLLAMA_NUM_GPU"] = "0" 
+os.environ["OLLAMA_NUM_GPU"] = "0"
 
+# ==============================================================================
+# 2. IMPORTS & DEPENDENCIES
+# ==============================================================================
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -19,13 +38,14 @@ import seaborn as sns
 from io import StringIO
 from contextlib import redirect_stdout
 from litellm import completion
-import ats  
 
-# --- CONFIGURATION IMPORT (NEW) ---
-from config import CURRENT_CONFIG 
-# ----------------------------------
+# --- INTERNAL MODULES ---
+import ats          # HR Dept
+import voice        # The Ears
+from config import CURRENT_CONFIG
+from router import route_query
 
-# --- 🛠️ CRITICAL FIX: Use Old Stable Imports ---
+# --- VECTOR DATABASE ---
 try:
     from langchain.vectorstores import Chroma
     from langchain.embeddings import OllamaEmbeddings
@@ -33,35 +53,44 @@ except ImportError:
     from langchain_community.vectorstores import Chroma
     from langchain_community.embeddings import OllamaEmbeddings
 
-from router import route_query
+# ==============================================================================
+# 3. PAGE CONFIGURATION
+# ==============================================================================
+st.set_page_config(
+    page_title=CURRENT_CONFIG["system_name"], 
+    page_icon="🤖", 
+    layout="wide"
+)
 
-# 1. Page Config
-st.set_page_config(page_title=CURRENT_CONFIG["system_name"], page_icon="🤖", layout="wide")
-st.title(f"🤖 {CURRENT_CONFIG['system_name']}") # Dynamic Title
+st.title(f"🤖 {CURRENT_CONFIG['system_name']}")
 
-# 2. Sidebar Navigation
+# ==============================================================================
+# 4. SIDEBAR NAVIGATION
+# ==============================================================================
 st.sidebar.title("🏢 Department Directory")
 page = st.sidebar.radio(
     "Go to Department:", 
     ["Chat Manager (Main)", "Resume ATS (HR Dept)"]
 )
 
-# ---------------------------------------------------------
-# 🚦 PAGE ROUTING LOGIC
-# ---------------------------------------------------------
+# ==============================================================================
+# 5. PAGE ROUTING LOGIC
+# ==============================================================================
 
 if page == "Resume ATS (HR Dept)":
     ats.render_ats_page()
 
 else:
-    # --- CHAT MANAGER MODE ---
-    
+    # --- MODE B: CHAT MANAGER (The Main App) ---
     st.markdown("### 💬 Central Command")
-    
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Helper: Legal Agent
+    # ==========================================================================
+    # 6. HELPER FUNCTIONS
+    # ==========================================================================
+    
     def get_legal_db():
         if not os.path.exists("vector_db"):
             st.error("❌ Error: 'vector_db' folder not found.")
@@ -79,20 +108,13 @@ else:
         legal_db = get_legal_db()
         if not legal_db:
             return "⚠️ Legal System Offline. Check terminal."
-        
         try:
             results = legal_db.similarity_search(query, k=3)
             context = "\n".join([doc.page_content for doc in results])
-            
-            prompt = f"""
-            You are a Corporate Lawyer. Answer based ONLY on this context:
-            {context}
-            User Question: {query}
-            """
+            prompt = f"You are a Corporate Lawyer. Answer based ONLY on this context:\n{context}\nUser Question: {query}"
             ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
-            
             response = completion(
-                model=f"ollama/{CURRENT_CONFIG['manager_model']}", # Uses Config Model
+                model=f"ollama/{CURRENT_CONFIG['manager_model']}", 
                 messages=[{"role": "user", "content": prompt}],
                 api_base=ollama_url,
                 options={"num_gpu": 0}
@@ -101,12 +123,9 @@ else:
         except Exception as e:
             return f"❌ Legal Agent Crash: {e}"
 
-    # Helper: Data Agent (With License Check)
     def ask_data_agent(query, df):
-        # --- LICENSE CHECK ---
         if not CURRENT_CONFIG["allow_data_analysis"]:
-            return "🔒 **RESTRICTED FEATURE:** Data Analysis is only available in the PRO version. Please upgrade your license."
-        # ---------------------
+            return "🔒 **RESTRICTED FEATURE:** Data Analysis is only available in the PRO version."
 
         prompt = f"""
         You are a Python Data Analyst. 
@@ -121,12 +140,11 @@ else:
 
         try:
             response = completion(
-                model=f"ollama/{CURRENT_CONFIG['data_agent_model']}", # Uses Config Model
+                model=f"ollama/{CURRENT_CONFIG['data_agent_model']}", 
                 messages=[{"role": "user", "content": prompt}],
                 api_base=ollama_url,
                 options={"num_gpu": 0} 
             )
-            
             code = response['choices'][0]['message']['content'].replace("```python", "").replace("```", "").strip()
             
             output_buffer = StringIO()
@@ -144,7 +162,9 @@ else:
         except Exception as e:
             return f"❌ Data Logic Error: {e}"
 
-    # Sidebar Data Upload
+    # ==========================================================================
+    # 7. SIDEBAR DATA
+    # ==========================================================================
     with st.sidebar:
         st.markdown("---")
         st.header("📂 Data Center")
@@ -155,21 +175,57 @@ else:
         else:
             df = None
 
-    # Chat Display
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            if isinstance(msg["content"], dict) and msg["content"].get("type") == "image":
-                st.image(msg["content"]["path"])
-                if msg["content"]["text"]: st.write(msg["content"]["text"])
-            else:
-                st.write(msg["content"])
+    # ==========================================================================
+    # 8. LAYOUT ARCHITECTURE (The Fix)
+    # ==========================================================================
+    
+    # We define the containers FIRST so we can fill them in any order we want.
+    chat_container = st.container()   # 1. Top Area (History)
+    voice_container = st.container()  # 2. Middle Area (Recorder)
+    # 3. Bottom Area is automatically handled by st.chat_input pinning itself.
 
-    # Input Handling
-    if prompt := st.chat_input("How can I help you?"):
+    # ==========================================================================
+    # 9. RENDER HISTORY (Inside the Top Container)
+    # ==========================================================================
+    with chat_container:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                if isinstance(msg["content"], dict) and msg["content"].get("type") == "image":
+                    st.image(msg["content"]["path"])
+                    if msg["content"]["text"]: st.write(msg["content"]["text"])
+                else:
+                    st.write(msg["content"])
+
+    # ==========================================================================
+    # 10. RENDER INPUTS
+    # ==========================================================================
+    
+    # A. Voice Recorder (Inside Middle Container)
+    with voice_container:
+        voice_text = voice.record_voice_widget()
+    
+    # B. Text Input (Pinned to Bottom)
+    chat_input = st.chat_input("Type a message...")
+
+    # ==========================================================================
+    # 11. PROCESSING LOGIC
+    # ==========================================================================
+    
+    if voice_text:
+        prompt = voice_text
+    else:
+        prompt = chat_input
+
+    if prompt:
+        # A. Add User Message (AND write it visually to the Top Container immediately)
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
+        
+        # We explicitly write to 'chat_container' so it appears ABOVE the recorder
+        with chat_container:
+             with st.chat_message("user"):
+                st.write(prompt)
 
+        # B. Process (The Brain)
         with st.spinner("🤖 Routing request..."):
             department = route_query(prompt)
             response_content = ""
@@ -186,11 +242,10 @@ else:
                     response_content = "⚠️ Please upload a CSV file to use the Data Agent."
             
             else:
-                # General Chat
                 ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
                 try:
                     response = completion(
-                        model=f"ollama/{CURRENT_CONFIG['manager_model']}", # Uses Config Model
+                        model=f"ollama/{CURRENT_CONFIG['manager_model']}", 
                         messages=[{"role": "user", "content": prompt}],
                         api_base=ollama_url,
                         options={"num_gpu": 0}
@@ -199,10 +254,14 @@ else:
                 except Exception as e:
                     response_content = f"❌ General Chat Error: {e}"
 
+        # C. Add AI Response (AND write it visually to the Top Container immediately)
         st.session_state.messages.append({"role": "assistant", "content": response_content})
-        with st.chat_message("assistant"):
-            if isinstance(response_content, dict) and response_content.get("type") == "image":
-                st.image(response_content["path"])
-                if response_content["text"]: st.write(response_content["text"])
-            else:
-                st.write(response_content)
+        
+        # Again, force it into the top container so it stays above the recorder
+        with chat_container:
+            with st.chat_message("assistant"):
+                if isinstance(response_content, dict) and response_content.get("type") == "image":
+                    st.image(response_content["path"])
+                    if response_content["text"]: st.write(response_content["text"])
+                else:
+                    st.write(response_content)

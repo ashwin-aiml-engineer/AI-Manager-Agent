@@ -5,7 +5,7 @@
 # =========================================================
 # CHANGE THIS TO SWITCH VERSIONS:
 # Options: "PRO" (Requires 32GB RAM) or "LITE" (Runs on 8GB RAM)
-VERSION_TIER = "LITE" 
+VERSION_TIER = "PRO" 
 
 # =========================================================
 # ⚙️ CONFIGURATION RULES
