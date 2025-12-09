@@ -1,6 +1,7 @@
 import streamlit as st
 import ollama
 from pypdf import PdfReader
+from config import CURRENT_CONFIG
 
 def extract_text(uploaded_file):
     """
@@ -48,7 +49,7 @@ def optimize_resume(resume_text, job_description):
     with st.spinner("✨ Gemma is analyzing your profile..."):
         try:
             response = ollama.chat(
-                model='gemma2:9b', 
+                model=CURRENT_CONFIG['resume_model'],  # <--- USES CONFIG NOW
                 messages=[{'role': 'user', 'content': prompt}]
             )
             return response['message']['content']

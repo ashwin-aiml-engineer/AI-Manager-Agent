@@ -1,79 +1,46 @@
-import sys
 import os
+import json
 from litellm import completion
+from config import CURRENT_CONFIG  # <--- NEW IMPORT
 
-# --- CONFIGURATION ---
-# We use Qwen because it follows strict "classification" instructions perfectly.
-ROUTER_MODEL = "ollama/qwen2.5-coder:32b" 
-
-def route_query(user_query):
+def route_query(query):
     """
-    Analyzes the user's input and decides which agent should handle it.
-    Returns: 'legal', 'data', or 'general'
+    Decides whether to send the user to 'legal', 'data', or 'general'.
     """
     
-    # 1. THE ROUTING SYSTEM PROMPT
-    # We give the AI a "Persona" of a Traffic Controller.
-    system_prompt = """
-    You are an intelligent Router Agent. Your ONLY job is to classify user queries.
-    
-    CATEGORIES:
-    1. 'legal': Questions about laws, acts (Industrial Disputes, etc), drafting notices, contracts, courts, or firing employees.
-    2. 'data': Questions about CSV files, sales numbers, plotting charts, trends, or datasets.
-    3. 'general': Simple greetings like "hi", "hello", or questions unrelated to law/data.
+    # 1. Use the Model defined in Config
+    MODEL_NAME = f"ollama/{CURRENT_CONFIG['manager_model']}"
 
-    RULES:
-    - Return ONLY one word: 'legal', 'data', or 'general'.
-    - Do NOT write explanations.
-    - Do NOT output markdown or punctuation.
+    prompt = f"""
+    You are an Intelligent Router. Classify the user's query into one of three categories:
+    1. 'legal': Questions about law, the Industrial Disputes Act, drafting notices, or regulations.
+    2. 'data': Requests to analyze CSV files, plot charts, calculate averages, or visualize data.
+    3. 'general': Anything else (greetings, resume help, general questions).
+
+    User Query: "{query}"
+
+    OUTPUT ONLY A JSON OBJECT: {{"category": "..."}}
     """
-
-    # 🛠️ CRITICAL FIX FOR DOCKER:
-    # Get the URL from the environment (passed via docker run -e), or default to localhost if testing locally.
-    ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
-
+    
     try:
-        # 2. CALL THE LOCAL MODEL
         response = completion(
-            model=ROUTER_MODEL, 
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            api_base=ollama_url,
-            # 🛑 FORCE CPU ONLY (Prevents CUDA Crash on 1050 Ti)
+            model=MODEL_NAME,  # <--- USES CONFIG NOW
+            messages=[{"role": "user", "content": prompt}],
+            api_base=os.getenv("OLLAMA_API_BASE", "http://localhost:11434"),
             options={"num_gpu": 0} 
         )
         
-        # 3. CLEAN THE OUTPUT
-        # Qwen is usually good, but we lowercase and strip spaces just in case.
-        decision = response['choices'][0]['message']['content'].strip().lower()
+        content = response['choices'][0]['message']['content']
         
-        # 4. VALIDATION
-        if "legal" in decision: return "legal"
-        if "data" in decision: return "data"
-        return "general"
+        # Clean the response to ensure valid JSON
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+            
+        decision = json.loads(content)
+        return decision.get("category", "general")
 
     except Exception as e:
-        print(f"❌ Router Error: {e}")
+        print(f"Router Error: {e}")
         return "general"
-
-# --- TEST AREA (This runs only when you execute this file directly) ---
-if __name__ == "__main__":
-    print(f"🤖 Manager Agent Online (Brain: {ROUTER_MODEL})\n")
-    print("Type a command to see where I send it (or 'exit').")
-    
-    while True:
-        user_input = input("\n🗣️ User: ")
-        if user_input.lower() == 'exit': break
-        
-        # Run the Router
-        destination = route_query(user_input)
-        
-        # Visual Feedback
-        if destination == "legal":
-            print("   ↳ ⚖️ Routing to LEGAL AGENT...")
-        elif destination == "data":
-            print("   ↳ 📊 Routing to DATA ANALYST...")
-        else:
-            print("   ↳ 🤖 Routing to GENERAL CHAT...")

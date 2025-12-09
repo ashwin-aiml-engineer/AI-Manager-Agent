@@ -1,14 +1,12 @@
 # --- DOCKER DATABASE FIX (Conditional) ---
-# We wrap this in try-except so it doesn't crash on Windows
 try:
     __import__('pysqlite3')
     import sys
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 except ImportError:
-    # This means we are on Windows (or the package isn't installed).
-    # We pass and rely on the standard sqlite3 library.
     pass
 # -----------------------------------------------------
+
 import os
 # DISABLE CHROMA TELEMETRY
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
@@ -21,7 +19,11 @@ import seaborn as sns
 from io import StringIO
 from contextlib import redirect_stdout
 from litellm import completion
-import ats  # <--- Imported correctly
+import ats  
+
+# --- CONFIGURATION IMPORT (NEW) ---
+from config import CURRENT_CONFIG 
+# ----------------------------------
 
 # --- 🛠️ CRITICAL FIX: Use Old Stable Imports ---
 try:
@@ -34,8 +36,8 @@ except ImportError:
 from router import route_query
 
 # 1. Page Config
-st.set_page_config(page_title="AI Agency Manager", page_icon="🤖", layout="wide")
-st.title("🤖 AI Agency Manager")
+st.set_page_config(page_title=CURRENT_CONFIG["system_name"], page_icon="🤖", layout="wide")
+st.title(f"🤖 {CURRENT_CONFIG['system_name']}") # Dynamic Title
 
 # 2. Sidebar Navigation
 st.sidebar.title("🏢 Department Directory")
@@ -45,25 +47,21 @@ page = st.sidebar.radio(
 )
 
 # ---------------------------------------------------------
-# 🚦 PAGE ROUTING LOGIC (The Fix)
+# 🚦 PAGE ROUTING LOGIC
 # ---------------------------------------------------------
 
 if page == "Resume ATS (HR Dept)":
-    # --- MODE A: RESUME TOOL ---
-    # We call the function from ats.py and STOP here. 
-    # We do NOT show the chat interface.
     ats.render_ats_page()
 
 else:
-    # --- MODE B: CHAT MANAGER (The original app) ---
+    # --- CHAT MANAGER MODE ---
     
     st.markdown("### 💬 Central Command")
     
-    # 3. Session State (Only needed for Chat Mode)
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # 4. Safe Brain Loading
+    # Helper: Legal Agent
     def get_legal_db():
         if not os.path.exists("vector_db"):
             st.error("❌ Error: 'vector_db' folder not found.")
@@ -77,7 +75,6 @@ else:
             st.error(f"❌ Database Error: {e}")
             return None
 
-    # 5. Helper: Legal Agent
     def ask_legal_agent(query):
         legal_db = get_legal_db()
         if not legal_db:
@@ -95,7 +92,7 @@ else:
             ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
             
             response = completion(
-                model="ollama/llama3.1", 
+                model=f"ollama/{CURRENT_CONFIG['manager_model']}", # Uses Config Model
                 messages=[{"role": "user", "content": prompt}],
                 api_base=ollama_url,
                 options={"num_gpu": 0}
@@ -104,8 +101,13 @@ else:
         except Exception as e:
             return f"❌ Legal Agent Crash: {e}"
 
-    # 6. Helper: Data Agent
+    # Helper: Data Agent (With License Check)
     def ask_data_agent(query, df):
+        # --- LICENSE CHECK ---
+        if not CURRENT_CONFIG["allow_data_analysis"]:
+            return "🔒 **RESTRICTED FEATURE:** Data Analysis is only available in the PRO version. Please upgrade your license."
+        # ---------------------
+
         prompt = f"""
         You are a Python Data Analyst. 
         DataFrame columns: {df.columns.tolist()}
@@ -119,7 +121,7 @@ else:
 
         try:
             response = completion(
-                model="ollama/qwen2.5-coder:32b", 
+                model=f"ollama/{CURRENT_CONFIG['data_agent_model']}", # Uses Config Model
                 messages=[{"role": "user", "content": prompt}],
                 api_base=ollama_url,
                 options={"num_gpu": 0} 
@@ -142,7 +144,7 @@ else:
         except Exception as e:
             return f"❌ Data Logic Error: {e}"
 
-    # 7. Sidebar Data Upload (Only for Chat Mode)
+    # Sidebar Data Upload
     with st.sidebar:
         st.markdown("---")
         st.header("📂 Data Center")
@@ -153,7 +155,7 @@ else:
         else:
             df = None
 
-    # 8. Chat Display Loop
+    # Chat Display
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             if isinstance(msg["content"], dict) and msg["content"].get("type") == "image":
@@ -162,7 +164,7 @@ else:
             else:
                 st.write(msg["content"])
 
-    # 9. Input Handling & Routing
+    # Input Handling
     if prompt := st.chat_input("How can I help you?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -188,7 +190,7 @@ else:
                 ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
                 try:
                     response = completion(
-                        model="ollama/llama3.1", 
+                        model=f"ollama/{CURRENT_CONFIG['manager_model']}", # Uses Config Model
                         messages=[{"role": "user", "content": prompt}],
                         api_base=ollama_url,
                         options={"num_gpu": 0}
@@ -197,7 +199,6 @@ else:
                 except Exception as e:
                     response_content = f"❌ General Chat Error: {e}"
 
-        # Display Response
         st.session_state.messages.append({"role": "assistant", "content": response_content})
         with st.chat_message("assistant"):
             if isinstance(response_content, dict) and response_content.get("type") == "image":
