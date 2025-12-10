@@ -207,21 +207,25 @@ else:
     # B. Text Input (Pinned to Bottom)
     chat_input = st.chat_input("Type a message...")
 
-    # ==========================================================================
-    # 11. PROCESSING LOGIC
+# ==========================================================================
+    # 11. PROCESSING LOGIC (Priority: Text > Voice)
     # ==========================================================================
     
-    if voice_text:
+    # CRITICAL FIX: We check Text FIRST. 
+    # If the user hit Enter on the keyboard, that is the clear intent.
+    if chat_input:
+        prompt = chat_input
+    elif voice_text:
         prompt = voice_text
     else:
-        prompt = chat_input
+        prompt = None
 
     if prompt:
-        # A. Add User Message (AND write it visually to the Top Container immediately)
+        # 1. Add User Message
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # We explicitly write to 'chat_container' so it appears ABOVE the recorder
-        with chat_container:
+        # If voice was used (and not overridden by text), show the bubble
+        if voice_text and not chat_input:
              with st.chat_message("user"):
                 st.write(prompt)
 
