@@ -1,39 +1,38 @@
 # 🤖 The Sovereign AI Agency (Local)
 
 A secure, **100% Offline** AI Agency Manager powered by **Local LLMs (Qwen, Llama, Gemma)**.
-This application runs entirely on your local machine (Air-Gapped ready), ensuring total data privacy for sensitive workflows. It includes a Voice Interface, Resume ATS Optimizer, and Data Analysis tools.
+This application runs entirely on your local machine (Air-Gapped ready), ensuring total data privacy for sensitive workflows. It transforms your laptop into a private server capable of Legal Research, Data Analysis, and Hiring Automation.
 
+> **Current Version:** v1.1 (Enterprise Update) - *Dec 11, 2025*
 
-## 🚀 Features
+## 🚀 Key Features
 
-### 1. 🎙️ Voice Command Interface (New!)
+### 1. 💾 Long-Term Memory (New!)
+- **Tech:** SQLite Database (Local).
+- **Capability:** The AI remembers past conversations even after you restart the computer.
+- **Management:** Full **CRUD** support (Create, Read, Update, Delete) — view past case files or delete sensitive history instantly.
+
+### 2. 📂 Universal Knowledge Portal (New!)
+- **Tech:** LangChain `Smart Ingestion`.
+- **Capability:** Drag-and-drop **PDFs, Word Docs (.docx), Text files, or PPTs** directly into the sidebar.
+- **Smart Learning:** The system uses **Incremental Ingestion**—it only "reads" new files, updating its knowledge base in seconds without rebuilding the whole database.
+
+### 3. 🎙️ Voice Command Interface
 - **Model:** `OpenAI Whisper (Base)` running locally.
 - **Capabilities:**
   - **Speech-to-Text:** Talk to your AI instead of typing.
   - **Offline Processing:** No audio data is ever sent to the cloud.
   - **"WhatsApp-Style" Layout:** Voice recorder sits naturally above the chat input.
 
-### 2. 🧠 The Intelligent Manager (Router)
+### 4. 🧠 The Intelligent Manager (Router)
 - **Model:** `qwen2.5-coder:32b` (Pro) / `llama3.1` (Lite)
 - **Role:** The "Boss." It analyzes your request, determines intent, and routes tasks to the correct specialist department (Legal, Data, or HR).
-
-### 3. 📄 Resume ATS Agent (HR Dept)
-- **Model:** `gemma2:9b`
-- **Capabilities:**
-  - **Analysis:** Scans resumes against job descriptions.
-  - **Optimization:** Rewrites bullet points to beat ATS (Applicant Tracking Systems).
-  - **Scoring:** Provides a match percentage score.
-
-### 4. ⚖️ Legal Advisor Agent
-- **Model:** `llama3.1:8b`
-- **Capabilities:**
-  - **RAG Engine:** Scans the *Industrial Disputes Act* (or any PDF) to answer queries with citations.
-  - **Drafting:** Auto-generates legal notices and letters.
 
 ### 5. 📊 Data Analyst Agent (Pro Only)
 - **Model:** `Python Sandbox` (Managed by Qwen)
 - **Capabilities:**
-  - **Automated Charting:** Reads CSV files and generates charts instantly.
+  - **Persistent Analysis:** Upload a CSV once; it stays available across sessions.
+  - **Automated Charting:** Generates bar charts, line graphs, and heatmaps instantly.
   - **Safe Execution:** Runs real Python code locally to calculate trends.
 
 ---
@@ -53,59 +52,73 @@ This system features a **Config Switch** (`config.py`) to adapt to your hardware
 ---
 
 ## 🛠️ Tech Stack
+- **Language:** Python 3.10
 - **Containerization:** Docker
 - **Models:** Qwen 2.5 (32B), Llama 3.1 (8B), Gemma 2 (9B), Whisper
 - **Orchestration:** LangChain & Ollama
-- **Vector DB:** ChromaDB
+- **Database:** - **Vector:** ChromaDB (for Documents/RAG)
+  - **Relational:** SQLite (for Chat History)
 - **Frontend:** Streamlit
 
 ---
 
-## 💻 How to Run (Option A: Docker 🐳) - *Recommended*
-*No Python installation required. Just Docker and Ollama.*
+## 💻 How to Run (Option A: One-Click Launcher 🚀)
+*For Windows Users*
 
-1. **Pull the image (or build it)**
-   ```bash
-   docker build -t ai-agency-manager .
-   ```
-
-2. **Run the Container** 
-Note: This command connects the container to your host's Ollama instance.
-
-```bash
-docker run -p 8501:8501 -e OLLAMA_API_BASE="[http://host.docker.internal:11434](http://host.docker.internal:11434)" ai-agency-manager
-```
-
-3. **Access the App**
-Open your browser to http://localhost:8501.
+1. **Prerequisite:** Ensure Ollama is installed.
+2. **Run:** Double-click `start_agency.bat`.
+   - This script automatically activates the environment, checks if Ollama is running, and launches the app.
 
 ---
-## 💻 How to Run (Option B: Python Source 🐍)
+
+## 💻 How to Run (Option B: Manual Python 🐍)
 For developers who want to modify the code.
 
 1. **Clone the repository**
-```bash
-git clone https://github.com/ashwin-aiml-engineer/AI-Manager-Agent.git
-cd AI-Manager-Agent
-```
+   ```bash
+   git clone https://github.com/ashwin-aiml-engineer/AI-Manager-Agent.git
+   cd AI-Manager-Agent
+   ```
+
 2. **Install Dependencies**
 ```bash
 pip install -r requirements.txt
 ```
-3. **Install AI Models (Ollama) You need Ollama installed.**
+
+3. **Install AI Models (Ollama)**
 ```bash
 ollama pull llama3.1
 ollama pull qwen2.5-coder:32b
 ollama pull nomic-embed-text
 ollama pull gemma2:9b
 ```
-4.**Prepare the Brain Place your PDF in the root folder, rename it to data.pdf, and run:**
-```bash
-python ingest.py
-```
-5.**Launch**
+
+4. **Launch**
 ```bash
 streamlit run app.py
 ```
+Note: You can add files to the Knowledge Base directly via the app's sidebar.
+
+---
+
+## 📂 Project Structure
+
+AI-Manager-Agent/
+├── app.py              # Main Application (UI & Logic)
+├── ingest.py           # Smart Knowledge Loader (Incremental)
+├── db.py               # SQLite Database Manager
+├── config.py           # Hardware Profile Switcher
+├── router.py           # Intelligent Intent Router
+├── voice.py            # Whisper Voice Recorder
+├── ats.py              # Resume Optimizer Module
+├── start_agency.bat    # Windows Launcher
+├── data/               # (Auto-Created) Stores PDFs/Docs
+├── uploads/            # (Auto-Created) Stores Analysis CSVs
+└── vector_db/          # (Auto-Created) ChromaDB Storage
+
 ---
 **Author: Ashwin Shetty**
+
+
+
+
