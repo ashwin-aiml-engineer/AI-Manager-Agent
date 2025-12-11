@@ -102,7 +102,7 @@ Note: You can add files to the Knowledge Base directly via the app's sidebar.
 ---
 
 ## 📂 Project Structure
-
+```text
 AI-Manager-Agent/
 ├── app.py              # Main Application (UI & Logic)
 ├── ingest.py           # Smart Knowledge Loader (Incremental)
@@ -115,7 +115,7 @@ AI-Manager-Agent/
 ├── data/               # (Auto-Created) Stores PDFs/Docs
 ├── uploads/            # (Auto-Created) Stores Analysis CSVs
 └── vector_db/          # (Auto-Created) ChromaDB Storage
-
+```
 ---
 **Author: Ashwin Shetty**
 
