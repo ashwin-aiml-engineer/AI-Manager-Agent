@@ -2,10 +2,8 @@ import os
 import sys
 
 # ==============================================================================
-# 🛠️ CRITICAL WINDOWS DLL FIXES (MUST BE FIRST)
+# 🛠️ CRITICAL WINDOWS DLL FIXES
 # ==============================================================================
-
-# 1. Force Windows to look in the Conda "Library/bin" folder for missing DLLs
 try:
     if sys.platform == "win32":
         conda_bin_path = os.path.join(sys.prefix, 'Library', 'bin')
@@ -14,10 +12,8 @@ try:
 except Exception as e:
     print(f"⚠️ Warning: Could not add DLL directory: {e}")
 
-# 2. Allow duplicate OpenMP libraries
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-# 3. Docker/Windows Database Fix
 try:
     __import__('pysqlite3')
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -42,6 +38,8 @@ from litellm import completion
 # --- INTERNAL MODULES ---
 import ats          # HR Dept
 import voice        # The Ears
+import db           # 💾 THE MEMORY
+import ingest       # 🧠 THE BRAIN (Added this!)
 from config import CURRENT_CONFIG
 from router import route_query
 
@@ -82,10 +80,122 @@ if page == "Resume ATS (HR Dept)":
 
 else:
     # --- MODE B: CHAT MANAGER (The Main App) ---
-    st.markdown("### 💬 Central Command")
-
+    
+    # 1. Initialize Session State
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
+    if "current_session_id" not in st.session_state:
+        st.session_state.current_session_id = None
+
+    # 2. Render Sidebar
+    with st.sidebar:
+        st.markdown("---")
+        st.header("🗄️ Case Files (History)")
+        
+        if st.button("➕ Start New Case", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.current_session_id = None
+            st.rerun()
+            
+        st.markdown("---")
+        
+        sessions = db.get_all_sessions()
+        if not sessions:
+            st.write("📭 No history found.")
+        
+        for s_id, title, date in sessions:
+            col1, col2 = st.columns([0.85, 0.15])
+            with col1:
+                if st.button(f"📄 {title}", key=f"load_{s_id}", use_container_width=True):
+                    st.session_state.messages = db.load_messages(s_id)
+                    st.session_state.current_session_id = s_id
+                    st.rerun()
+            with col2:
+                if st.button("🗑️", key=f"del_{s_id}"):
+                    db.delete_session(s_id)
+                    if st.session_state.current_session_id == s_id:
+                        st.session_state.messages = []
+                        st.session_state.current_session_id = None
+                    st.toast(f"🗑️ Deleted: {title}")
+                    st.rerun()
+
+        # ==========================================
+        # 📂 UNIVERSAL UPLOAD PORTAL (LOOP FIXED)
+        # ==========================================
+        st.markdown("---")
+        st.header("📂 Upload Portal")
+        
+        # 1. Setup Folders
+        if not os.path.exists("uploads"): os.makedirs("uploads")
+        if not os.path.exists("data"): os.makedirs("data")
+            
+        DATA_PATH_CSV = "uploads/active_data.csv"
+        
+        # 2. Initialize State for Loop Prevention
+        if "last_processed_file" not in st.session_state:
+            st.session_state.last_processed_file = None
+
+        # 3. File Uploader
+        uploaded_file = st.file_uploader(
+            "Upload Document / Dataset", 
+            type=["csv", "pdf", "docx", "txt", "pptx"]
+        )
+        
+        df = None
+        if uploaded_file:
+            file_ext = uploaded_file.name.split(".")[-1].lower()
+            
+            st.write("What should the AI do with this?")
+            intent = st.radio(
+                "Select Mode:",
+                ["🧠 Add to Knowledge Base (Memory)", "📊 Load for Data Analysis (Charts)"],
+                label_visibility="collapsed"
+            )
+            
+            # === OPTION A: KNOWLEDGE BASE ===
+            if "Knowledge" in intent:
+                save_path = os.path.join("data", uploaded_file.name)
+                
+                # Button prevents loops automatically (Buttons reset to False on rerun)
+                if st.button(f"📥 Ingest '{uploaded_file.name}'"):
+                    with open(save_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    with st.spinner("Updating Brain..."):
+                        try:
+                            ingest.ingest()
+                            st.success("✅ Saved to Long-Term Memory!")
+                        except Exception as e:
+                            st.error(f"❌ Error: {e}")
+
+            # === OPTION B: DATA ANALYSIS (THE FIX) ===
+            elif "Data" in intent:
+                if file_ext != "csv":
+                    st.error("⚠️ For Data Analysis (Charts), we currently ONLY support CSV files.")
+                else:
+                    # 🛑 STOP THE LOOP: Check if we already did this!
+                    if st.session_state.last_processed_file != uploaded_file.name:
+                        with open(DATA_PATH_CSV, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        # Mark this file as "Done" so we don't reload it next time
+                        st.session_state.last_processed_file = uploaded_file.name
+                        
+                        st.toast("📊 Data loaded for Analyst!")
+                        st.rerun()
+
+        # Load existing Analysis CSV if available
+        if os.path.exists(DATA_PATH_CSV):
+            st.markdown("---")
+            df = pd.read_csv(DATA_PATH_CSV)
+            st.caption(f"📊 Active Analysis Data: {len(df)} rows")
+            
+            if st.button("❌ Unload Data", use_container_width=True):
+                os.remove(DATA_PATH_CSV)
+                # Reset the memory so we can upload the same file again if needed
+                st.session_state.last_processed_file = None 
+                st.rerun()
 
     # ==========================================================================
     # 6. HELPER FUNCTIONS
@@ -98,8 +208,8 @@ else:
         try:
             ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
             embeddings = OllamaEmbeddings(model="nomic-embed-text", base_url=ollama_url)
-            db = Chroma(persist_directory="vector_db", embedding_function=embeddings)
-            return db
+            db_conn = Chroma(persist_directory="vector_db", embedding_function=embeddings)
+            return db_conn
         except Exception as e:
             st.error(f"❌ Database Error: {e}")
             return None
@@ -163,30 +273,14 @@ else:
             return f"❌ Data Logic Error: {e}"
 
     # ==========================================================================
-    # 7. SIDEBAR DATA
-    # ==========================================================================
-    with st.sidebar:
-        st.markdown("---")
-        st.header("📂 Data Center")
-        uploaded_file = st.file_uploader("Upload CSV for Analysis", type=["csv"])
-        if uploaded_file:
-            df = pd.read_csv(uploaded_file)
-            st.success(f"Loaded: {len(df)} rows")
-        else:
-            df = None
-
-    # ==========================================================================
-    # 8. LAYOUT ARCHITECTURE (The Fix)
+    # 7. LAYOUT & RENDERING
     # ==========================================================================
     
-    # We define the containers FIRST so we can fill them in any order we want.
-    chat_container = st.container()   # 1. Top Area (History)
-    voice_container = st.container()  # 2. Middle Area (Recorder)
-    # 3. Bottom Area is automatically handled by st.chat_input pinning itself.
-
-    # ==========================================================================
-    # 9. RENDER HISTORY (Inside the Top Container)
-    # ==========================================================================
+    st.markdown("### 💬 Central Command")
+    
+    chat_container = st.container()   
+    voice_container = st.container() 
+    
     with chat_container:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
@@ -196,23 +290,15 @@ else:
                 else:
                     st.write(msg["content"])
 
-    # ==========================================================================
-    # 10. RENDER INPUTS
-    # ==========================================================================
-    
-    # A. Voice Recorder (Inside Middle Container)
     with voice_container:
         voice_text = voice.record_voice_widget()
     
-    # B. Text Input (Pinned to Bottom)
     chat_input = st.chat_input("Type a message...")
 
-# ==========================================================================
-    # 11. PROCESSING LOGIC (Priority: Text > Voice)
+    # ==========================================================================
+    # 8. PROCESSING LOGIC
     # ==========================================================================
     
-    # CRITICAL FIX: We check Text FIRST. 
-    # If the user hit Enter on the keyboard, that is the clear intent.
     if chat_input:
         prompt = chat_input
     elif voice_text:
@@ -221,15 +307,16 @@ else:
         prompt = None
 
     if prompt:
-        # 1. Add User Message
+        if st.session_state.current_session_id is None:
+            st.session_state.current_session_id = db.create_session(prompt)
+
         st.session_state.messages.append({"role": "user", "content": prompt})
+        db.save_message(st.session_state.current_session_id, "user", prompt)
         
-        # If voice was used (and not overridden by text), show the bubble
-        if voice_text and not chat_input:
-             with st.chat_message("user"):
+        with chat_container:
+            with st.chat_message("user"):
                 st.write(prompt)
 
-        # B. Process (The Brain)
         with st.spinner("🤖 Routing request..."):
             department = route_query(prompt)
             response_content = ""
@@ -258,10 +345,9 @@ else:
                 except Exception as e:
                     response_content = f"❌ General Chat Error: {e}"
 
-        # C. Add AI Response (AND write it visually to the Top Container immediately)
         st.session_state.messages.append({"role": "assistant", "content": response_content})
+        db.save_message(st.session_state.current_session_id, "assistant", response_content)
         
-        # Again, force it into the top container so it stays above the recorder
         with chat_container:
             with st.chat_message("assistant"):
                 if isinstance(response_content, dict) and response_content.get("type") == "image":

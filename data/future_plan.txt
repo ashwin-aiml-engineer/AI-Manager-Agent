@@ -1,0 +1,1 @@
+"Phase 8 will involve adding a Reranker to the AI."

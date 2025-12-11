@@ -4,24 +4,23 @@ from config import CURRENT_CONFIG
 
 def route_query(query):
     """
-    Determines if the query is for the 'legal' dept, 'data' dept, or 'general' chat.
+    Determines if the query is for the 'legal' (Knowledge Base), 'data' dept, or 'general' chat.
     """
     model_name = f"ollama/{CURRENT_CONFIG['manager_model']}"
     ollama_url = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
 
-    # 🧠 SYSTEM PROMPT: The Routing Logic
+    # 🧠 SYSTEM PROMPT: The Routing Logic (UPDATED)
     system_prompt = """
     You are the Manager of an AI Agency. Route the user's query to the correct department.
     
     DEPARTMENTS:
-    1. 'legal': ONLY for questions about the "Industrial Disputes Act", laws, sections, courts, or legal drafting.
+    1. 'legal': Use this for ANY question that requires looking up documents, laws, the "Industrial Disputes Act", OR information about "Project Sovereign" or the agency itself.
     2. 'data': ONLY for requests to "plot", "graph", "chart", "analyze csv", or "calculate" numbers from a file.
-    3. 'general': For everything else.
+    3. 'general': For casual greetings like "hello", "hi", or questions unrelated to the business context.
     
     CRITICAL RULES:
-    - If the user asks for BOTH (e.g., "Graph this AND explain law"), route to 'general'.
-    - If the query is messy, unclear, or gibberish, route to 'general'.
-    - If the query is just "Hello" or conversational, route to 'general'.
+    - If the user asks "Who founded Project Sovereign?", route to 'legal' (so it checks the files).
+    - If unsure, route to 'general'.
     
     OUTPUT FORMAT:
     Return ONLY one word: 'legal', 'data', or 'general'. Do not add punctuation.
